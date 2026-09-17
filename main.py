@@ -5,10 +5,12 @@ from pathlib import Path
 
 import rarfile
 
-from PyQt6.QtCore import QThread, pyqtSignal
+from PyQt6.QtCore import QThread, pyqtSignal, Qt
+from PyQt6.QtGui import QFont
 from PyQt6.QtWidgets import (
     QApplication,
     QFileDialog,
+    QFrame,
     QHBoxLayout,
     QLabel,
     QLineEdit,
@@ -27,40 +29,15 @@ from PyQt6.QtWidgets import (
 # UNRAR
 # ============================================================
 
-def find_unrar():
-    """Ищет UnRAR.exe в стандартных местах и PATH."""
+def shutil_which(name):
+    path_env = os.environ.get("PATH", "")
 
-    candidates = []
+    for directory in path_env.split(os.pathsep):
+        if not directory:
+            continue
 
-    program_files = os.environ.get("ProgramFiles")
-    program_files_x86 = os.environ.get("ProgramFiles(x86)")
-    program_w6432 = os.environ.get("ProgramW6432")
+        candidate = Path(directory) / name
 
-    if program_files:
-        candidates.append(
-            Path(program_files) / "WinRAR" / "UnRAR.exe"
-        )
-
-    if program_files_x86:
-        candidates.append(
-            Path(program_files_x86) / "WinRAR" / "UnRAR.exe"
-        )
-
-    if program_w6432:
-        candidates.append(
-            Path(program_w6432) / "WinRAR" / "UnRAR.exe"
-        )
-
-    # PATH
-    path_unrar = shutil_which("UnRAR.exe")
-    if path_unrar:
-        candidates.append(Path(path_unrar))
-
-    path_unrar_lower = shutil_which("unrar")
-    if path_unrar_lower:
-        candidates.append(Path(path_unrar_lower))
-
-    for candidate in candidates:
         try:
             if candidate.is_file():
                 return str(candidate)
@@ -70,16 +47,28 @@ def find_unrar():
     return None
 
 
-def shutil_which(name):
-    """Небольшой аналог shutil.which без отдельного импорта."""
-    path_env = os.environ.get("PATH", "")
+def find_unrar():
+    candidates = []
 
-    for directory in path_env.split(os.pathsep):
-        if not directory:
-            continue
+    for env_name in (
+        "ProgramFiles",
+        "ProgramFiles(x86)",
+        "ProgramW6432",
+    ):
+        folder = os.environ.get(env_name)
 
-        candidate = Path(directory) / name
+        if folder:
+            candidates.append(
+                Path(folder) / "WinRAR" / "UnRAR.exe"
+            )
 
+    for name in ("UnRAR.exe", "unrar"):
+        found = shutil_which(name)
+
+        if found:
+            candidates.append(Path(found))
+
+    for candidate in candidates:
         try:
             if candidate.is_file():
                 return str(candidate)
@@ -109,9 +98,8 @@ class PasswordChecker(QThread):
         unrar_path,
         verification_mode="quick",
         skip_duplicates=True,
-        parent=None,
     ):
-        super().__init__(parent)
+        super().__init__()
 
         self.archive_path = archive_path
         self.wordlist_path = wordlist_path
@@ -124,16 +112,8 @@ class PasswordChecker(QThread):
         self.tested = 0
         self.skipped = 0
 
-    # --------------------------------------------------------
-    # STOP
-    # --------------------------------------------------------
-
     def stop(self):
         self.stop_requested = True
-
-    # --------------------------------------------------------
-    # LOG
-    # --------------------------------------------------------
 
     def log(self, text):
         self.log_signal.emit(text)
@@ -143,20 +123,11 @@ class PasswordChecker(QThread):
     # --------------------------------------------------------
 
     def unrar_test_password(self, password):
-        """
-        Резервная проверка пароля через UnRAR.
-
-        t = test archive
-        -pPASSWORD = передать пароль
-        -y = yes to all
-        """
 
         if self.stop_requested:
             return False, False
 
         try:
-            # Защищаем пароль от проблем с аргументами subprocess:
-            # передаём аргументы списком, shell=False.
             command = [
                 self.unrar_path,
                 "t",
@@ -176,10 +147,10 @@ class PasswordChecker(QThread):
                 shell=False,
             )
 
-            output_lines = []
-
             while True:
+
                 if self.stop_requested:
+
                     try:
                         process.terminate()
                     except Exception:
@@ -198,58 +169,49 @@ class PasswordChecker(QThread):
                 line = process.stdout.readline()
 
                 if not line:
+
                     if process.poll() is not None:
                         break
 
                     continue
 
-                line = line.strip()
+            code = process.wait()
 
-                if line:
-                    output_lines.append(line)
-
-            return_code = process.wait()
-
-            output = "\n".join(output_lines)
-
-            # UnRAR возвращает 0 при успешной проверке.
-            if return_code == 0:
-                return True, True
-
-            # Если это просто неправильный пароль,
-            # продолжаем проверку.
-            return False, True
+            return code == 0, True
 
         except Exception as e:
-            self.log(f"UnRAR ошибка: {e}")
+
+            self.log(
+                f"UnRAR ошибка: {e}"
+            )
+
             return False, True
 
     # --------------------------------------------------------
-    # RARFILE QUICK TEST
+    # QUICK
     # --------------------------------------------------------
 
     def rarfile_quick_test(self, password):
-        """
-        Быстрая проверка через rarfile.
-
-        Важный момент версии 2.1:
-        password устанавливается ДО infolist().
-
-        Это позволяет работать с архивами,
-        где зашифрованы заголовки.
-        """
 
         try:
-            with rarfile.RarFile(self.archive_path) as archive:
-                archive.setpassword(password)
 
-                try:
-                    infos = archive.infolist()
-                except Exception as e:
-                    return False, False, str(e)
+            with rarfile.RarFile(
+                self.archive_path
+            ) as archive:
+
+                archive.setpassword(
+                    password
+                )
+
+                infos = archive.infolist()
 
                 if not infos:
-                    return False, False, "RAR не вернул список файлов"
+
+                    return (
+                        False,
+                        False,
+                        "RAR не вернул список файлов",
+                    )
 
                 files = [
                     info
@@ -258,54 +220,91 @@ class PasswordChecker(QThread):
                 ]
 
                 if not files:
-                    return False, False, "В архиве только каталоги"
+
+                    return (
+                        False,
+                        False,
+                        "В архиве нет файлов",
+                    )
 
                 files.sort(
-                    key=lambda x: (
-                        getattr(x, "file_size", 0) or 0
-                    )
+                    key=lambda x:
+                    getattr(
+                        x,
+                        "file_size",
+                        0,
+                    ) or 0
                 )
 
                 test_info = files[0]
 
                 self.log(
-                    f"Тестовый файл: {test_info.filename}"
+                    f"Тест: {test_info.filename}"
                 )
 
-                with archive.open(test_info) as file:
-                    data = file.read(4096)
+                with archive.open(
+                    test_info
+                ) as file:
+
+                    file.read(4096)
 
                 return True, True, ""
 
         except rarfile.BadRarFile:
-            return False, False, "Повреждённый или неподдерживаемый RAR"
+
+            return (
+                False,
+                False,
+                "Повреждённый или неподдерживаемый RAR",
+            )
 
         except rarfile.PasswordRequired:
-            return False, False, "Требуется пароль"
+
+            return (
+                False,
+                False,
+                "Требуется пароль",
+            )
 
         except rarfile.RarWrongPassword:
-            return False, False, "Неверный пароль"
+
+            return (
+                False,
+                False,
+                "Неверный пароль",
+            )
 
         except rarfile.NoCrypto:
-            return False, False, "Криптография RAR не поддерживается rarfile"
+
+            return (
+                False,
+                False,
+                "Криптография RAR не поддерживается",
+            )
 
         except Exception as e:
-            return False, False, str(e)
+
+            return (
+                False,
+                False,
+                str(e),
+            )
 
     # --------------------------------------------------------
-    # RARFILE FULL TEST
+    # FULL
     # --------------------------------------------------------
 
     def rarfile_full_test(self, password):
-        """
-        Полная проверка содержимого архива.
-        Медленнее, но надёжнее quick режима.
-        """
 
         try:
-            with rarfile.RarFile(self.archive_path) as archive:
 
-                archive.setpassword(password)
+            with rarfile.RarFile(
+                self.archive_path
+            ) as archive:
+
+                archive.setpassword(
+                    password
+                )
 
                 infos = archive.infolist()
 
@@ -316,26 +315,45 @@ class PasswordChecker(QThread):
                 ]
 
                 if not files:
-                    return False, "В архиве нет обычных файлов"
 
-                for index, info in enumerate(files, start=1):
-
-                    if self.stop_requested:
-                        return False, "STOP"
-
-                    self.log(
-                        f"Полная проверка: "
-                        f"{index}/{len(files)} — {info.filename}"
+                    return (
+                        False,
+                        "В архиве нет файлов",
                     )
 
-                    with archive.open(info) as file:
+                for index, info in enumerate(
+                    files,
+                    start=1,
+                ):
+
+                    if self.stop_requested:
+
+                        return (
+                            False,
+                            "STOP",
+                        )
+
+                    self.log(
+                        f"Проверка {index}/{len(files)}: "
+                        f"{info.filename}"
+                    )
+
+                    with archive.open(
+                        info
+                    ) as file:
 
                         while True:
 
                             if self.stop_requested:
-                                return False, "STOP"
 
-                            chunk = file.read(1024 * 1024)
+                                return (
+                                    False,
+                                    "STOP",
+                                )
+
+                            chunk = file.read(
+                                1024 * 1024
+                            )
 
                             if not chunk:
                                 break
@@ -343,31 +361,30 @@ class PasswordChecker(QThread):
                 return True, ""
 
         except rarfile.RarWrongPassword:
+
             return False, "Неверный пароль"
 
         except rarfile.PasswordRequired:
+
             return False, "Требуется пароль"
 
         except rarfile.BadRarFile:
-            return False, "Повреждённый или неподдерживаемый RAR"
+
+            return False, "Повреждённый RAR"
 
         except rarfile.NoCrypto:
+
             return False, "Криптография не поддерживается"
 
         except Exception as e:
+
             return False, str(e)
 
     # --------------------------------------------------------
-    # COUNT WORDLIST
+    # COUNT
     # --------------------------------------------------------
 
     def count_wordlist(self):
-        """
-        Считает количество строк для progress bar.
-
-        Используем бинарный режим — это быстрее
-        и меньше зависит от кодировки.
-        """
 
         count = 0
 
@@ -383,14 +400,11 @@ class PasswordChecker(QThread):
         return count
 
     # --------------------------------------------------------
-    # READ PASSWORD
+    # DECODE
     # --------------------------------------------------------
 
     @staticmethod
-    def decode_password(raw_line):
-        """
-        Пытается прочитать строку wordlist.
-        """
+    def decode_password(raw):
 
         for encoding in (
             "utf-8-sig",
@@ -399,12 +413,16 @@ class PasswordChecker(QThread):
             "cp866",
             "latin-1",
         ):
+
             try:
-                return raw_line.decode(encoding).rstrip("\r\n")
+                return raw.decode(
+                    encoding
+                ).rstrip("\r\n")
+
             except UnicodeDecodeError:
                 continue
 
-        return raw_line.decode(
+        return raw.decode(
             "utf-8",
             errors="replace",
         ).rstrip("\r\n")
@@ -416,82 +434,66 @@ class PasswordChecker(QThread):
     def run(self):
 
         try:
+
+            archive = Path(
+                self.archive_path
+            )
+
+            wordlist = Path(
+                self.wordlist_path
+            )
+
+            unrar = Path(
+                self.unrar_path
+            )
+
             # ------------------------------------------------
             # VALIDATION
             # ------------------------------------------------
 
-            if self.stop_requested:
-                self.finished_signal.emit(
-                    "Проверка остановлена."
-                )
-                return
-
-            archive = Path(self.archive_path)
-            wordlist = Path(self.wordlist_path)
-            unrar = Path(self.unrar_path)
-
-            if not archive.exists():
-                self.error_signal.emit(
-                    "Архив не найден:\n\n"
-                    f"{archive}"
-                )
-                return
-
             if not archive.is_file():
+
                 self.error_signal.emit(
-                    "Выбранный путь не является файлом."
+                    "Архив не найден."
                 )
+
                 return
 
             if archive.stat().st_size == 0:
-                self.error_signal.emit(
-                    "Файл архива пустой."
-                )
-                return
 
-            if not wordlist.exists():
                 self.error_signal.emit(
-                    "Wordlist не найден:\n\n"
-                    f"{wordlist}"
+                    "Архив пуст."
                 )
+
                 return
 
             if not wordlist.is_file():
+
                 self.error_signal.emit(
-                    "Выбранный wordlist не является файлом."
+                    "Wordlist не найден."
                 )
+
                 return
 
-            if not unrar.exists():
+            if not unrar.is_file():
+
                 self.error_signal.emit(
-                    "UnRAR.exe не найден:\n\n"
-                    f"{unrar}"
+                    "UnRAR.exe не найден."
                 )
+
                 return
 
-            # ------------------------------------------------
-            # RARFILE CONFIG
-            # ------------------------------------------------
-
-            rarfile.UNRAR_TOOL = str(unrar)
-
-            self.log(
-                f"Архив: {archive}"
-            )
-
-            self.log(
-                f"Wordlist: {wordlist}"
-            )
-
-            self.log(
-                f"UnRAR: {unrar}"
+            rarfile.UNRAR_TOOL = str(
+                unrar
             )
 
             # ------------------------------------------------
-            # BASIC ARCHIVE CHECK
+            # INFO
             # ------------------------------------------------
 
-            self.log("Проверка архива через UnRAR...")
+            self.log(
+                "Проверка архива..."
+            )
 
             try:
 
@@ -512,55 +514,51 @@ class PasswordChecker(QThread):
                     timeout=30,
                 )
 
-                if result.returncode != 0:
+                if result.returncode == 0:
 
                     self.log(
-                        "UnRAR сообщил, что архив не удалось открыть."
-                    )
-
-                    self.log(result.stdout[-3000:])
-
-                    # Не завершаем работу автоматически.
-                    # Некоторые варианты RAR могут вести себя
-                    # нестандартно при listing.
-                    self.log(
-                        "Продолжаем проверку паролей..."
+                        "✓ Архив успешно распознан."
                     )
 
                 else:
 
                     self.log(
-                        "Архив успешно распознан UnRAR."
+                        "⚠ UnRAR не смог получить список."
+                    )
+
+                    self.log(
+                        "Проверка паролей продолжается."
                     )
 
             except subprocess.TimeoutExpired:
+
                 self.log(
-                    "Проверка списка заняла больше 30 секунд."
+                    "⚠ Проверка списка заняла слишком много времени."
                 )
 
             # ------------------------------------------------
-            # WORDLIST COUNT
+            # WORDLIST
             # ------------------------------------------------
-
-            self.log("Подсчёт строк wordlist...")
 
             total = self.count_wordlist()
 
             if total == 0:
+
                 self.error_signal.emit(
                     "Wordlist пуст."
                 )
+
                 return
 
             self.log(
-                f"Строк в wordlist: {total:,}"
+                f"Wordlist: {total:,} строк"
             )
 
-            # ------------------------------------------------
-            # CHECK PASSWORDS
-            # ------------------------------------------------
-
             seen = set()
+
+            # ------------------------------------------------
+            # PASSWORD LOOP
+            # ------------------------------------------------
 
             with open(
                 wordlist,
@@ -568,76 +566,68 @@ class PasswordChecker(QThread):
                 buffering=1024 * 1024,
             ) as file:
 
-                for raw_line in file:
+                for raw in file:
 
                     if self.stop_requested:
+
                         self.finished_signal.emit(
-                            "Проверка остановлена пользователем."
+                            "Проверка остановлена."
                         )
+
                         return
 
-                    password = self.decode_password(raw_line)
+                    password = (
+                        self.decode_password(raw)
+                    )
 
-                    # Убираем только CR/LF.
-                    # Пробелы внутри/по краям НЕ удаляем,
-                    # потому что пробел может быть частью пароля.
                     if password == "":
+
                         self.skipped += 1
                         continue
-
-                    # ------------------------------------------------
-                    # DUPLICATES
-                    # ------------------------------------------------
 
                     if self.skip_duplicates:
 
                         if password in seen:
+
                             self.skipped += 1
                             continue
 
                         seen.add(password)
 
-                    # ------------------------------------------------
-                    # STATS
-                    # ------------------------------------------------
-
                     self.tested += 1
 
-                    progress = int(
-                        ((self.tested + self.skipped) / total) * 100
+                    current = (
+                        self.tested
+                        + self.skipped
                     )
 
-                    progress = max(
-                        0,
+                    progress = int(
+                        current / total * 100
+                    )
+
+                    self.progress_signal.emit(
                         min(100, progress)
                     )
 
-                    self.progress_signal.emit(progress)
-
                     self.stats_signal.emit(
-                        f"Проверено: {self.tested:,}    "
-                        f"Пропущено: {self.skipped:,}    "
-                        f"Всего строк: {total:,}"
-                    )
-
-                    self.log(
-                        f"[{self.tested:,}] Проверка пароля"
+                        f"{self.tested:,} проверено  •  "
+                        f"{self.skipped:,} пропущено  •  "
+                        f"{total:,} строк"
                     )
 
                     # ------------------------------------------------
-                    # QUICK MODE
+                    # QUICK
                     # ------------------------------------------------
 
                     if self.verification_mode == "quick":
 
                         ok, usable, error = (
-                            self.rarfile_quick_test(password)
+                            self.rarfile_quick_test(
+                                password
+                            )
                         )
 
                         if ok:
-                            self.log(
-                                "Пароль успешно подтверждён."
-                            )
 
                             self.found_signal.emit(
                                 password
@@ -649,25 +639,15 @@ class PasswordChecker(QThread):
 
                             return
 
-                        # rarfile иногда не может проверить конкретный
-                        # архив. В таком случае используем UnRAR.
                         if not usable:
 
-                            self.log(
-                                f"rarfile: {error}"
-                            )
-
-                            unrar_ok, unrar_ran = (
+                            unrar_ok, _ = (
                                 self.unrar_test_password(
                                     password
                                 )
                             )
 
                             if unrar_ok:
-
-                                self.log(
-                                    "Пароль подтверждён UnRAR."
-                                )
 
                                 self.found_signal.emit(
                                     password
@@ -680,7 +660,7 @@ class PasswordChecker(QThread):
                                 return
 
                     # ------------------------------------------------
-                    # FULL MODE
+                    # FULL
                     # ------------------------------------------------
 
                     else:
@@ -692,10 +672,6 @@ class PasswordChecker(QThread):
                         )
 
                         if ok:
-
-                            self.log(
-                                "Полная проверка успешно завершена."
-                            )
 
                             self.found_signal.emit(
                                 password
@@ -710,40 +686,22 @@ class PasswordChecker(QThread):
                         if error == "STOP":
 
                             self.finished_signal.emit(
-                                "Проверка остановлена пользователем."
+                                "Проверка остановлена."
                             )
 
                             return
 
-            # ------------------------------------------------
-            # NOTHING FOUND
-            # ------------------------------------------------
-
-            self.progress_signal.emit(100)
+            self.progress_signal.emit(
+                100
+            )
 
             self.finished_signal.emit(
-                "Проверка завершена. "
-                "Подходящий пароль не найден."
-            )
-
-        except PermissionError as e:
-
-            self.error_signal.emit(
-                "Нет доступа к файлу:\n\n"
-                f"{e}"
-            )
-
-        except UnicodeError as e:
-
-            self.error_signal.emit(
-                "Ошибка кодировки wordlist:\n\n"
-                f"{e}"
+                "Пароль в wordlist не найден."
             )
 
         except Exception as e:
 
             self.error_signal.emit(
-                "Неожиданная ошибка:\n\n"
                 f"{type(e).__name__}: {e}"
             )
 
@@ -755,19 +713,22 @@ class PasswordChecker(QThread):
 class MainWindow(QMainWindow):
 
     def __init__(self):
+
         super().__init__()
 
+        self.checker = None
+
         self.setWindowTitle(
-            "RAR Password Recovery 2.1"
+            "RAR Password Recovery"
         )
 
-        self.resize(900, 650)
-
-        self.checker = None
-        self.allow_close = False
+        self.setMinimumSize(
+            1080,
+            960,
+        )
 
         self.build_ui()
-
+        self.apply_style()
         self.detect_unrar()
 
     # --------------------------------------------------------
@@ -776,98 +737,182 @@ class MainWindow(QMainWindow):
 
     def build_ui(self):
 
-        central = QWidget()
-        self.setCentralWidget(central)
+        root = QWidget()
 
-        layout = QVBoxLayout(central)
+        self.setCentralWidget(
+            root
+        )
+
+        main = QVBoxLayout(root)
+
+        main.setContentsMargins(
+            28,
+            24,
+            28,
+            24,
+        )
+
+        main.setSpacing(
+            18
+        )
 
         # ----------------------------------------------------
-        # ARCHIVE
+        # HEADER
         # ----------------------------------------------------
 
-        archive_label = QLabel("RAR архив:")
+        header = QHBoxLayout()
 
-        self.archive_edit = QLineEdit()
+        title_box = QVBoxLayout()
 
-        archive_button = QPushButton("Выбрать...")
-        archive_button.clicked.connect(
-            self.select_archive
+        title = QLabel(
+            "RAR Password Recovery"
         )
 
-        archive_row = QHBoxLayout()
-
-        archive_row.addWidget(
-            self.archive_edit
+        title.setObjectName(
+            "title"
         )
 
-        archive_row.addWidget(
-            archive_button
+        subtitle = QLabel(
+            "Проверка паролей по словарю"
         )
 
-        layout.addWidget(archive_label)
-        layout.addLayout(archive_row)
+        subtitle.setObjectName(
+            "subtitle"
+        )
+
+        title_box.addWidget(
+            title
+        )
+
+        title_box.addWidget(
+            subtitle
+        )
+
+        version = QLabel(
+            "v2.2"
+        )
+
+        version.setObjectName(
+            "version"
+        )
+
+        header.addLayout(
+            title_box
+        )
+
+        header.addStretch()
+
+        header.addWidget(
+            version
+        )
+
+        main.addLayout(
+            header
+        )
 
         # ----------------------------------------------------
-        # WORDLIST
+        # FILE CARD
         # ----------------------------------------------------
 
-        wordlist_label = QLabel("Wordlist:")
+        file_card = QFrame()
 
-        self.wordlist_edit = QLineEdit()
-
-        wordlist_button = QPushButton("Выбрать...")
-        wordlist_button.clicked.connect(
-            self.select_wordlist
+        file_card.setObjectName(
+            "card"
         )
 
-        wordlist_row = QHBoxLayout()
-
-        wordlist_row.addWidget(
-            self.wordlist_edit
+        file_layout = QVBoxLayout(
+            file_card
         )
 
-        wordlist_row.addWidget(
-            wordlist_button
+        file_layout.setContentsMargins(
+            20,
+            18,
+            20,
+            18,
         )
 
-        layout.addWidget(wordlist_label)
-        layout.addLayout(wordlist_row)
+        file_layout.setSpacing(
+            12
+        )
+
+        card_title = QLabel(
+            "Файлы"
+        )
+
+        card_title.setObjectName(
+            "cardTitle"
+        )
+
+        file_layout.addWidget(
+            card_title
+        )
+
+        self.archive_edit = (
+            self.create_file_row(
+                file_layout,
+                "Архив",
+                "Выберите RAR архив...",
+                self.select_archive,
+            )
+        )
+
+        self.wordlist_edit = (
+            self.create_file_row(
+                file_layout,
+                "Wordlist",
+                "Выберите файл со списком паролей...",
+                self.select_wordlist,
+            )
+        )
+
+        self.unrar_edit = (
+            self.create_file_row(
+                file_layout,
+                "UnRAR",
+                "Путь к UnRAR.exe...",
+                self.select_unrar,
+            )
+        )
+
+        main.addWidget(
+            file_card
+        )
 
         # ----------------------------------------------------
-        # UNRAR
+        # SETTINGS CARD
         # ----------------------------------------------------
 
-        unrar_label = QLabel("UnRAR.exe:")
+        settings = QFrame()
 
-        self.unrar_edit = QLineEdit()
-
-        unrar_button = QPushButton("Выбрать...")
-        unrar_button.clicked.connect(
-            self.select_unrar
+        settings.setObjectName(
+            "card"
         )
 
-        unrar_row = QHBoxLayout()
-
-        unrar_row.addWidget(
-            self.unrar_edit
+        settings_layout = QHBoxLayout(
+            settings
         )
 
-        unrar_row.addWidget(
-            unrar_button
+        settings_layout.setContentsMargins(
+            20,
+            18,
+            20,
+            18,
         )
 
-        layout.addWidget(unrar_label)
-        layout.addLayout(unrar_row)
-
-        # ----------------------------------------------------
-        # VERIFICATION
-        # ----------------------------------------------------
+        # Verification
+        verification_box = QVBoxLayout()
 
         verification_label = QLabel(
-            "Режим проверки:"
+            "Режим проверки"
         )
 
-        self.verification_combo = QComboBox()
+        verification_label.setObjectName(
+            "fieldLabel"
+        )
+
+        self.verification_combo = (
+            QComboBox()
+        )
 
         self.verification_combo.addItem(
             "Быстрая проверка",
@@ -879,81 +924,186 @@ class MainWindow(QMainWindow):
             "full",
         )
 
-        layout.addWidget(
+        verification_box.addWidget(
             verification_label
         )
 
-        layout.addWidget(
+        verification_box.addWidget(
             self.verification_combo
         )
 
-        # ----------------------------------------------------
-        # DUPLICATES
-        # ----------------------------------------------------
+        # Duplicate
+        duplicate_box = QVBoxLayout()
 
-        self.skip_duplicates_button = QPushButton(
-            "Пропускать дубликаты: ВКЛ"
+        duplicate_label = QLabel(
+            "Опции"
         )
 
-        self.skip_duplicates_button.setCheckable(
+        duplicate_label.setObjectName(
+            "fieldLabel"
+        )
+
+        self.duplicate_button = (
+            QPushButton(
+                "✓  Пропускать дубликаты"
+            )
+        )
+
+        self.duplicate_button.setCheckable(
             True
         )
 
-        self.skip_duplicates_button.setChecked(
+        self.duplicate_button.setChecked(
             True
         )
 
-        self.skip_duplicates_button.clicked.connect(
+        self.duplicate_button.clicked.connect(
             self.toggle_duplicates
         )
 
-        layout.addWidget(
-            self.skip_duplicates_button
+        duplicate_box.addWidget(
+            duplicate_label
+        )
+
+        duplicate_box.addWidget(
+            self.duplicate_button
+        )
+
+        settings_layout.addLayout(
+            verification_box
+        )
+
+        settings_layout.addSpacing(
+            20
+        )
+
+        settings_layout.addLayout(
+            duplicate_box
+        )
+
+        settings_layout.addStretch()
+
+        main.addWidget(
+            settings
         )
 
         # ----------------------------------------------------
-        # PROGRESS
+        # STATUS
         # ----------------------------------------------------
+
+        status_card = QFrame()
+
+        status_card.setObjectName(
+            "statusCard"
+        )
+
+        status_layout = QVBoxLayout(
+            status_card
+        )
+
+        status_layout.setContentsMargins(
+            20,
+            16,
+            20,
+            16,
+        )
+
+        status_header = QHBoxLayout()
+
+        self.status_dot = QLabel(
+            "●"
+        )
+
+        self.status_dot.setObjectName(
+            "statusDot"
+        )
+
+        self.status_label = QLabel(
+            "Готов к проверке"
+        )
+
+        self.status_label.setObjectName(
+            "statusLabel"
+        )
+
+        status_header.addWidget(
+            self.status_dot
+        )
+
+        status_header.addWidget(
+            self.status_label
+        )
+
+        status_header.addStretch()
+
+        self.percent_label = QLabel(
+            "0%"
+        )
+
+        self.percent_label.setObjectName(
+            "percent"
+        )
+
+        status_header.addWidget(
+            self.percent_label
+        )
+
+        status_layout.addLayout(
+            status_header
+        )
 
         self.progress = QProgressBar()
 
-        self.progress.setRange(
-            0,
-            100,
+        self.progress.setValue(
+            0
         )
 
-        self.progress.setValue(0)
+        self.progress.setTextVisible(
+            False
+        )
 
-        layout.addWidget(
+        status_layout.addWidget(
             self.progress
         )
 
-        # ----------------------------------------------------
-        # STATS
-        # ----------------------------------------------------
-
         self.stats_label = QLabel(
-            "Проверено: 0    "
-            "Пропущено: 0    "
-            "Всего строк: 0"
+            "0 проверено  •  "
+            "0 пропущено  •  "
+            "0 строк"
         )
 
-        layout.addWidget(
+        self.stats_label.setObjectName(
+            "stats"
+        )
+
+        status_layout.addWidget(
             self.stats_label
+        )
+
+        main.addWidget(
+            status_card
         )
 
         # ----------------------------------------------------
         # BUTTONS
         # ----------------------------------------------------
 
-        buttons_row = QHBoxLayout()
+        buttons = QHBoxLayout()
 
         self.start_button = QPushButton(
-            "Начать проверку"
+            "▶   Начать проверку"
+        )
+
+        self.start_button.setObjectName(
+            "startButton"
         )
 
         self.stop_button = QPushButton(
-            "Остановить"
+            "■   Остановить"
+        )
+
+        self.stop_button.setObjectName(
+            "stopButton"
         )
 
         self.stop_button.setEnabled(
@@ -968,26 +1118,40 @@ class MainWindow(QMainWindow):
             self.stop_check
         )
 
-        buttons_row.addWidget(
+        buttons.addWidget(
             self.start_button
         )
 
-        buttons_row.addWidget(
+        buttons.addWidget(
             self.stop_button
         )
 
-        layout.addLayout(
-            buttons_row
+        main.addLayout(
+            buttons
         )
 
         # ----------------------------------------------------
         # LOG
         # ----------------------------------------------------
 
-        log_label = QLabel("Журнал:")
+        log_title = QHBoxLayout()
 
-        layout.addWidget(
+        log_label = QLabel(
+            "Журнал"
+        )
+
+        log_label.setObjectName(
+            "cardTitle"
+        )
+
+        log_title.addWidget(
             log_label
+        )
+
+        log_title.addStretch()
+
+        main.addLayout(
+            log_title
         )
 
         self.log = QTextEdit()
@@ -996,12 +1160,320 @@ class MainWindow(QMainWindow):
             True
         )
 
-        layout.addWidget(
-            self.log
+        self.log.setObjectName(
+            "log"
+        )
+
+        main.addWidget(
+            self.log,
+            1,
+        )
+
+        # ----------------------------------------------------
+        # FOOTER
+        # ----------------------------------------------------
+
+        footer = QLabel(
+            "RAR Password Recovery • "
+            "UnRAR backend"
+        )
+
+        footer.setObjectName(
+            "footer"
+        )
+
+        footer.setAlignment(
+            Qt.AlignmentFlag.AlignCenter
+        )
+
+        main.addWidget(
+            footer
         )
 
     # --------------------------------------------------------
-    # UNRAR DETECTION
+    # FILE ROW
+    # --------------------------------------------------------
+
+    def create_file_row(
+            self,
+            parent_layout,
+            label_text,
+            placeholder,
+            callback,
+    ):
+        label = QLabel(label_text)
+
+        label.setObjectName(
+            "fieldLabel"
+        )
+
+        row = QHBoxLayout()
+        row.setSpacing(10)
+
+        edit = QLineEdit()
+
+        edit.setPlaceholderText(
+            placeholder
+        )
+
+        # Поле не будет схлопываться
+        edit.setMinimumWidth(420)
+
+        # Длинный путь можно посмотреть целиком
+        edit.setToolTip("")
+
+        button = QPushButton(
+            "Обзор"
+        )
+
+        # Кнопка всегда остаётся нормального размера
+        button.setMinimumWidth(90)
+        button.setMaximumWidth(110)
+
+        button.clicked.connect(
+            callback
+        )
+
+        row.addWidget(
+            edit,
+            1
+        )
+
+        row.addWidget(
+            button,
+            0
+        )
+
+        parent_layout.addWidget(
+            label
+        )
+
+        parent_layout.addLayout(
+            row
+        )
+
+        return edit
+
+    # --------------------------------------------------------
+    # STYLE
+    # --------------------------------------------------------
+
+    def apply_style(self):
+
+        self.setStyleSheet(
+            """
+            QMainWindow {
+                background: #0f1117;
+            }
+
+            QWidget {
+                color: #e7e9ee;
+                font-family: "Segoe UI";
+                font-size: 14px;
+            }
+
+            QLabel#title {
+                font-size: 28px;
+                font-weight: 700;
+                color: #ffffff;
+            }
+
+            QLabel#subtitle {
+                color: #8d95a5;
+                font-size: 14px;
+                margin-top: 2px;
+            }
+
+            QLabel#version {
+                background: #1d2330;
+                color: #8fa2c5;
+                padding: 7px 12px;
+                border-radius: 9px;
+                font-weight: 600;
+            }
+
+            QFrame#card {
+                background: #171a22;
+                border: 1px solid #252b36;
+                border-radius: 14px;
+            }
+
+            QFrame#statusCard {
+                background: #141923;
+                border: 1px solid #263044;
+                border-radius: 14px;
+            }
+
+            QLabel#cardTitle {
+                color: #ffffff;
+                font-size: 16px;
+                font-weight: 650;
+            }
+
+            QLabel#fieldLabel {
+                color: #929aaa;
+                font-size: 12px;
+                font-weight: 600;
+            }
+
+            QLineEdit {
+                background: #10131a;
+                border: 1px solid #2a303c;
+                border-radius: 9px;
+                padding: 10px 12px;
+                color: #eef0f4;
+                selection-background-color: #4c79d8;
+            }
+
+            QLineEdit:focus {
+                border: 1px solid #4c79d8;
+            }
+
+            QComboBox {
+                background: #10131a;
+                border: 1px solid #2a303c;
+                border-radius: 9px;
+                padding: 9px 12px;
+                min-width: 190px;
+            }
+
+            QComboBox:hover {
+                border: 1px solid #3a4352;
+            }
+
+            QComboBox QAbstractItemView {
+                background: #171a22;
+                border: 1px solid #303746;
+                selection-background-color: #344b78;
+                color: #ffffff;
+            }
+
+            QPushButton {
+                background: #202632;
+                border: 1px solid #303746;
+                border-radius: 9px;
+                padding: 10px 16px;
+                color: #e8ebf0;
+                font-weight: 600;
+            }
+
+            QPushButton:hover {
+                background: #28303d;
+                border-color: #414b5c;
+            }
+
+            QPushButton:pressed {
+                background: #171c25;
+            }
+
+            QPushButton:disabled {
+                background: #171a20;
+                color: #555d6b;
+                border-color: #222731;
+            }
+
+            QPushButton#startButton {
+                background: #315fc4;
+                border: none;
+                border-radius: 10px;
+                padding: 13px;
+                font-size: 15px;
+                font-weight: 700;
+                color: white;
+            }
+
+            QPushButton#startButton:hover {
+                background: #3b6bd8;
+            }
+
+            QPushButton#startButton:pressed {
+                background: #294fa5;
+            }
+
+            QPushButton#startButton:disabled {
+                background: #242a35;
+                color: #616978;
+            }
+
+            QPushButton#stopButton {
+                background: #242831;
+                border: 1px solid #3a404c;
+                border-radius: 10px;
+                padding: 13px;
+                font-size: 15px;
+                font-weight: 700;
+            }
+
+            QPushButton#stopButton:hover {
+                background: #302c31;
+                border-color: #55464d;
+            }
+
+            QPushButton#stopButton:disabled {
+                background: #181b21;
+                color: #555d6b;
+            }
+
+            QPushButton:checked {
+                background: #253a62;
+                border-color: #3e62a1;
+            }
+
+            QLabel#statusDot {
+                color: #5c83d8;
+                font-size: 17px;
+            }
+
+            QLabel#statusLabel {
+                color: #dfe4ec;
+                font-size: 14px;
+                font-weight: 650;
+            }
+
+            QLabel#percent {
+                color: #ffffff;
+                font-size: 20px;
+                font-weight: 700;
+            }
+
+            QLabel#stats {
+                color: #7f8898;
+                font-size: 12px;
+            }
+
+            QProgressBar {
+                background: #0d1016;
+                border: none;
+                border-radius: 5px;
+                height: 10px;
+                margin-top: 8px;
+                margin-bottom: 4px;
+            }
+
+            QProgressBar::chunk {
+                background: #4d78d3;
+                border-radius: 5px;
+            }
+
+            QTextEdit#log {
+                background: #0b0e13;
+                border: 1px solid #252b36;
+                border-radius: 12px;
+                padding: 12px;
+                color: #aeb6c5;
+                font-family: "Cascadia Mono", "Consolas", monospace;
+                font-size: 12px;
+            }
+
+            QLabel#footer {
+                color: #555d6b;
+                font-size: 11px;
+            }
+            """
+        )
+
+    # --------------------------------------------------------
+    # UNRAR
     # --------------------------------------------------------
 
     def detect_unrar(self):
@@ -1015,13 +1487,13 @@ class MainWindow(QMainWindow):
             )
 
             self.write_log(
-                f"Найден UnRAR.exe: {path}"
+                f"✓ UnRAR найден: {path}"
             )
 
         else:
 
             self.write_log(
-                "UnRAR.exe автоматически не найден."
+                "⚠ UnRAR.exe не найден автоматически."
             )
 
     # --------------------------------------------------------
@@ -1030,21 +1502,18 @@ class MainWindow(QMainWindow):
 
     def select_archive(self):
 
-        file_path, _ = QFileDialog.getOpenFileName(
+        path, _ = QFileDialog.getOpenFileName(
             self,
             "Выберите RAR архив",
             "",
-            (
-                "RAR архивы "
-                "(*.rar *.part*.rar *.r00 *.r01);;"
-                "Все файлы (*)"
-            ),
+            "RAR архивы (*.rar *.part*.rar *.r00 *.r01);;"
+            "Все файлы (*)",
         )
 
-        if file_path:
+        if path:
 
             self.archive_edit.setText(
-                file_path
+                path
             )
 
     # --------------------------------------------------------
@@ -1053,18 +1522,18 @@ class MainWindow(QMainWindow):
 
     def select_wordlist(self):
 
-        file_path, _ = QFileDialog.getOpenFileName(
+        path, _ = QFileDialog.getOpenFileName(
             self,
             "Выберите wordlist",
             "",
-            "Текстовые файлы (*.txt *.lst *.dic);;"
+            "Wordlist (*.txt *.lst *.dic);;"
             "Все файлы (*)",
         )
 
-        if file_path:
+        if path:
 
             self.wordlist_edit.setText(
-                file_path
+                path
             )
 
     # --------------------------------------------------------
@@ -1073,32 +1542,40 @@ class MainWindow(QMainWindow):
 
     def select_unrar(self):
 
-        file_path, _ = QFileDialog.getOpenFileName(
+        path, _ = QFileDialog.getOpenFileName(
             self,
             "Выберите UnRAR.exe",
             "",
             "UnRAR.exe (UnRAR.exe);;Все файлы (*)",
         )
 
-        if file_path:
+        if path:
 
             self.unrar_edit.setText(
-                file_path
+                path
             )
+
+    # --------------------------------------------------------
+    # DUPLICATES
+    # --------------------------------------------------------
 
     def toggle_duplicates(self):
 
-        if self.skip_duplicates_button.isChecked():
+        if self.duplicate_button.isChecked():
 
-            self.skip_duplicates_button.setText(
-                "Пропускать дубликаты: ВКЛ"
+            self.duplicate_button.setText(
+                "✓  Пропускать дубликаты"
             )
 
         else:
 
-            self.skip_duplicates_button.setText(
-                "Пропускать дубликаты: ВЫКЛ"
+            self.duplicate_button.setText(
+                "○  Не пропускать дубликаты"
             )
+
+    # --------------------------------------------------------
+    # LOG
+    # --------------------------------------------------------
 
     def write_log(self, text):
 
@@ -1114,17 +1591,29 @@ class MainWindow(QMainWindow):
             scrollbar.maximum()
         )
 
+    # --------------------------------------------------------
+    # START
+    # --------------------------------------------------------
+
     def start_check(self):
 
-        archive = self.archive_edit.text().strip()
-        wordlist = self.wordlist_edit.text().strip()
-        unrar = self.unrar_edit.text().strip()
+        archive = (
+            self.archive_edit.text().strip()
+        )
+
+        wordlist = (
+            self.wordlist_edit.text().strip()
+        )
+
+        unrar = (
+            self.unrar_edit.text().strip()
+        )
 
         if not archive:
 
             QMessageBox.warning(
                 self,
-                "Ошибка",
+                "Не выбран архив",
                 "Выберите RAR архив.",
             )
 
@@ -1135,17 +1624,7 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(
                 self,
                 "Ошибка",
-                "Указанный RAR архив не существует.",
-            )
-
-            return
-
-        if Path(archive).stat().st_size == 0:
-
-            QMessageBox.warning(
-                self,
-                "Ошибка",
-                "Выбранный архив пуст.",
+                "Указанный архив не существует.",
             )
 
             return
@@ -1154,8 +1633,8 @@ class MainWindow(QMainWindow):
 
             QMessageBox.warning(
                 self,
-                "Ошибка",
-                "Выберите wordlist.",
+                "Не выбран wordlist",
+                "Выберите файл со списком паролей.",
             )
 
             return
@@ -1165,7 +1644,7 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(
                 self,
                 "Ошибка",
-                "Указанный wordlist не существует.",
+                "Wordlist не существует.",
             )
 
             return
@@ -1174,8 +1653,8 @@ class MainWindow(QMainWindow):
 
             QMessageBox.warning(
                 self,
-                "Ошибка",
-                "Не указан UnRAR.exe.",
+                "UnRAR",
+                "Не найден UnRAR.exe.",
             )
 
             return
@@ -1184,33 +1663,43 @@ class MainWindow(QMainWindow):
 
             QMessageBox.warning(
                 self,
-                "Ошибка",
-                "UnRAR.exe не найден.",
+                "UnRAR",
+                "Указанный UnRAR.exe не существует.",
             )
 
             return
 
         # ----------------------------------------------------
-        # RESET
+        # UI RESET
         # ----------------------------------------------------
 
-        self.progress.setValue(0)
+        self.progress.setValue(
+            0
+        )
+
+        self.percent_label.setText(
+            "0%"
+        )
+
+        self.status_label.setText(
+            "Подготовка..."
+        )
 
         self.stats_label.setText(
-            "Проверено: 0    "
-            "Пропущено: 0    "
-            "Всего строк: 0"
+            "0 проверено  •  "
+            "0 пропущено  •  "
+            "подготовка"
         )
 
         self.write_log("")
         self.write_log(
-            "========================================"
+            "════════════════════════════════════"
         )
         self.write_log(
-            "Запуск RAR Password Recovery 2.1"
+            "  Запуск RAR Password Recovery 2.2"
         )
         self.write_log(
-            "========================================"
+            "════════════════════════════════════"
         )
 
         mode = (
@@ -1218,12 +1707,8 @@ class MainWindow(QMainWindow):
         )
 
         skip_duplicates = (
-            self.skip_duplicates_button.isChecked()
+            self.duplicate_button.isChecked()
         )
-
-        # ----------------------------------------------------
-        # WORKER
-        # ----------------------------------------------------
 
         self.checker = PasswordChecker(
             archive_path=archive,
@@ -1234,7 +1719,7 @@ class MainWindow(QMainWindow):
         )
 
         self.checker.progress_signal.connect(
-            self.progress.setValue
+            self.update_progress
         )
 
         self.checker.log_signal.connect(
@@ -1258,81 +1743,86 @@ class MainWindow(QMainWindow):
         )
 
         self.checker.finished.connect(
-            self.worker_thread_finished
+            self.worker_finished
         )
 
-        # ----------------------------------------------------
-        # BUTTON STATE
-        # ----------------------------------------------------
-
-        self.start_button.setEnabled(
-            False
-        )
-
-        self.stop_button.setEnabled(
+        self.set_running_ui(
             True
-        )
-
-        self.archive_edit.setEnabled(
-            False
-        )
-
-        self.wordlist_edit.setEnabled(
-            False
-        )
-
-        self.unrar_edit.setEnabled(
-            False
-        )
-
-        self.verification_combo.setEnabled(
-            False
-        )
-
-        self.skip_duplicates_button.setEnabled(
-            False
         )
 
         self.checker.start()
 
+    # --------------------------------------------------------
+    # PROGRESS
+    # --------------------------------------------------------
+
+    def update_progress(self, value):
+
+        self.progress.setValue(
+            value
+        )
+
+        self.percent_label.setText(
+            f"{value}%"
+        )
+
+        if value > 0:
+
+            self.status_label.setText(
+                "Идёт проверка..."
+            )
+
+    # --------------------------------------------------------
+    # STOP
+    # --------------------------------------------------------
+
     def stop_check(self):
 
-        if not self.checker:
-            return
+        if (
+            self.checker
+            and self.checker.isRunning()
+        ):
 
-        if not self.checker.isRunning():
-            return
+            self.status_label.setText(
+                "Остановка..."
+            )
 
-        self.write_log(
-            "Запрошена остановка..."
-        )
+            self.write_log(
+                "⚠ Запрошена остановка."
+            )
 
-        self.stop_button.setEnabled(
-            False
-        )
+            self.stop_button.setEnabled(
+                False
+            )
 
-        self.checker.stop()
+            self.checker.stop()
+
+    # --------------------------------------------------------
+    # FOUND
+    # --------------------------------------------------------
 
     def password_found(self, password):
 
-        self.write_log(
-            ""
+        self.status_label.setText(
+            "Пароль найден!"
         )
 
-        self.write_log(
-            "========================================"
+        self.status_dot.setText(
+            "●"
         )
 
+        self.write_log("")
         self.write_log(
-            "ПАРОЛЬ НАЙДЕН"
+            "════════════════════════════════════"
         )
-
         self.write_log(
-            f"Пароль: {password}"
+            "  ✓ ПАРОЛЬ НАЙДЕН"
         )
-
         self.write_log(
-            "========================================"
+            f"  Пароль: {password}"
+        )
+        self.write_log(
+            "════════════════════════════════════"
         )
 
         QMessageBox.information(
@@ -1348,8 +1838,26 @@ class MainWindow(QMainWindow):
     def check_finished(self, message):
 
         self.write_log(
-            message
+            f"→ {message}"
         )
+
+        if "найден" in message.lower():
+
+            self.status_label.setText(
+                "Готово — пароль найден"
+            )
+
+        elif "останов" in message.lower():
+
+            self.status_label.setText(
+                "Проверка остановлена"
+            )
+
+        else:
+
+            self.status_label.setText(
+                "Проверка завершена"
+            )
 
     # --------------------------------------------------------
     # ERROR
@@ -1357,12 +1865,12 @@ class MainWindow(QMainWindow):
 
     def check_error(self, message):
 
-        self.write_log(
-            "ОШИБКА:"
+        self.status_label.setText(
+            "Ошибка"
         )
 
         self.write_log(
-            message
+            f"✕ Ошибка: {message}"
         )
 
         QMessageBox.critical(
@@ -1375,13 +1883,15 @@ class MainWindow(QMainWindow):
     # THREAD FINISHED
     # --------------------------------------------------------
 
-    def worker_thread_finished(self):
+    def worker_finished(self):
+
+        self.set_running_ui(
+            False
+        )
 
         self.write_log(
             "Поток проверки завершён."
         )
-
-        self.restore_controls()
 
         if self.checker:
 
@@ -1390,41 +1900,41 @@ class MainWindow(QMainWindow):
         self.checker = None
 
     # --------------------------------------------------------
-    # RESTORE UI
+    # RUNNING UI
     # --------------------------------------------------------
 
-    def restore_controls(self):
+    def set_running_ui(self, running):
 
         self.start_button.setEnabled(
-            True
+            not running
         )
 
         self.stop_button.setEnabled(
-            False
+            running
         )
 
         self.archive_edit.setEnabled(
-            True
+            not running
         )
 
         self.wordlist_edit.setEnabled(
-            True
+            not running
         )
 
         self.unrar_edit.setEnabled(
-            True
+            not running
         )
 
         self.verification_combo.setEnabled(
-            True
+            not running
         )
 
-        self.skip_duplicates_button.setEnabled(
-            True
+        self.duplicate_button.setEnabled(
+            not running
         )
 
     # --------------------------------------------------------
-    # CLOSE EVENT
+    # CLOSE
     # --------------------------------------------------------
 
     def closeEvent(self, event):
@@ -1439,7 +1949,7 @@ class MainWindow(QMainWindow):
                 "Проверка выполняется",
                 (
                     "Проверка паролей ещё выполняется.\n\n"
-                    "Остановить проверку и закрыть программу?"
+                    "Остановить её и закрыть программу?"
                 ),
                 QMessageBox.StandardButton.Yes
                 | QMessageBox.StandardButton.No,
@@ -1451,25 +1961,16 @@ class MainWindow(QMainWindow):
                 event.ignore()
                 return
 
-            self.write_log(
-                "Остановка перед закрытием программы..."
-            )
-
             self.checker.stop()
 
-            # Ждём завершения потока.
-            # Worker самостоятельно завершит внешний UnRAR,
-            # если он в этот момент выполняется.
             if not self.checker.wait(5000):
 
                 QMessageBox.warning(
                     self,
                     "Остановка",
                     (
-                        "Поток проверки не успел завершиться "
-                        "за 5 секунд.\n\n"
-                        "Закрытие отменено, чтобы не оставить "
-                        "рабочий поток в некорректном состоянии."
+                        "Проверка ещё не завершилась.\n\n"
+                        "Закрытие отменено."
                     ),
                 )
 
@@ -1487,6 +1988,23 @@ def main():
 
     app = QApplication(
         sys.argv
+    )
+
+    app.setApplicationName(
+        "RAR Password Recovery"
+    )
+
+    app.setApplicationVersion(
+        "2.2"
+    )
+
+    font = QFont(
+        "Segoe UI",
+        10,
+    )
+
+    app.setFont(
+        font
     )
 
     window = MainWindow()
