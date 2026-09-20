@@ -1,4 +1,8 @@
+cffi==2.1.1
+cryptography==50.0.1
+pycparser==3.0
 PyQt6==6.11.0
 PyQt6-Qt6==6.11.0
 PyQt6_sip==13.11.1
 rarfile==4.2
+typing_extensions==4.16.0

@@ -48,32 +48,32 @@ def shutil_which(name):
 
 
 def find_unrar():
-    candidates = []
 
-    for env_name in (
-        "ProgramFiles",
-        "ProgramFiles(x86)",
-        "ProgramW6432",
-    ):
-        folder = os.environ.get(env_name)
+    local_unrar = Path(sys.executable).resolve().parent / "UnRAR.exe"
 
-        if folder:
-            candidates.append(
-                Path(folder) / "WinRAR" / "UnRAR.exe"
-            )
+    if local_unrar.is_file():
+        return local_unrar
 
-    for name in ("UnRAR.exe", "unrar"):
-        found = shutil_which(name)
+    script_unrar = Path(__file__).resolve().parent / "UnRAR.exe"
 
-        if found:
-            candidates.append(Path(found))
+    if script_unrar.is_file():
+        return script_unrar
 
-    for candidate in candidates:
-        try:
-            if candidate.is_file():
-                return str(candidate)
-        except OSError:
-            pass
+    possible_paths = [
+        Path(os.environ.get("ProgramFiles", "")) / "WinRAR" / "UnRAR.exe",
+        Path(os.environ.get("ProgramFiles(x86)", "")) / "WinRAR" / "UnRAR.exe",
+        Path(os.environ.get("ProgramW6432", "")) / "WinRAR" / "UnRAR.exe",
+    ]
+
+    for path in possible_paths:
+        if path.is_file():
+            return path
+
+    for folder in os.environ.get("PATH", "").split(os.pathsep):
+        path = Path(folder) / "UnRAR.exe"
+
+        if path.is_file():
+            return path
 
     return None
 
@@ -488,6 +488,39 @@ class PasswordChecker(QThread):
             )
 
             # ------------------------------------------------
+            # PASSWORD CHECK
+            # ------------------------------------------------
+
+            self.log(
+                "Проверка защиты архива паролем..."
+            )
+
+            try:
+
+                with rarfile.RarFile(
+                        str(archive)
+                ) as test_archive:
+
+                    if not test_archive.needs_password():
+                        self.error_signal.emit(
+                            "RAR архив не защищён паролем."
+                        )
+
+                        return
+
+                self.log(
+                    "✓ Архив защищён паролем."
+                )
+
+            except Exception as e:
+
+                self.error_signal.emit(
+                    f"Не удалось определить защиту архива: {e}"
+                )
+
+                return
+
+        # ------------------------------------------------
             # INFO
             # ------------------------------------------------
 
@@ -788,23 +821,11 @@ class MainWindow(QMainWindow):
             subtitle
         )
 
-        version = QLabel(
-            "v2.2"
-        )
-
-        version.setObjectName(
-            "version"
-        )
-
         header.addLayout(
             title_box
         )
 
         header.addStretch()
-
-        header.addWidget(
-            version
-        )
 
         main.addLayout(
             header
@@ -945,7 +966,7 @@ class MainWindow(QMainWindow):
 
         self.duplicate_button = (
             QPushButton(
-                "✓  Пропускать дубликаты"
+                "●  Пропускать дубликаты"
             )
         )
 
@@ -1284,14 +1305,6 @@ class MainWindow(QMainWindow):
                 margin-top: 2px;
             }
 
-            QLabel#version {
-                background: #1d2330;
-                color: #8fa2c5;
-                padding: 7px 12px;
-                border-radius: 9px;
-                font-weight: 600;
-            }
-
             QFrame#card {
                 background: #171a22;
                 border: 1px solid #252b36;
@@ -1469,6 +1482,15 @@ class MainWindow(QMainWindow):
                 color: #555d6b;
                 font-size: 11px;
             }
+            
+            QMessageBox {
+                background: #171a22;
+            }
+            
+            QMessageBox QLabel {
+                color: #ffffff;
+                background: transparent;
+            }
             """
         )
 
@@ -1482,9 +1504,10 @@ class MainWindow(QMainWindow):
 
         if path:
 
-            self.unrar_edit.setText(
-                path
-            )
+            unrar = find_unrar()
+
+            if unrar:
+                self.unrar_edit.setText(str(unrar))
 
             self.write_log(
                 f"✓ UnRAR найден: {path}"
@@ -1564,7 +1587,7 @@ class MainWindow(QMainWindow):
         if self.duplicate_button.isChecked():
 
             self.duplicate_button.setText(
-                "✓  Пропускать дубликаты"
+                "●  Пропускать дубликаты"
             )
 
         else:
@@ -1825,11 +1848,43 @@ class MainWindow(QMainWindow):
             "════════════════════════════════════"
         )
 
-        QMessageBox.information(
-            self,
-            "Пароль найден",
-            f"Пароль:\n\n{password}",
-        )
+        dialog = QMessageBox(self)
+        dialog.setWindowTitle("Пароль найден")
+        dialog.setText("Пароль успешно найден!")
+        dialog.setInformativeText(f"\nПароль:\n{password}")
+        dialog.setIcon(QMessageBox.Icon.Information)
+        dialog.setStandardButtons(QMessageBox.StandardButton.Ok)
+        dialog.setStyleSheet(
+            """ 
+            QMessageBox { 
+                background: #171a22; color: #ffffff; min-width: 480px; 
+            }
+            
+            QMessageBox QLabel { 
+                color: #ffffff; font-size: 14px; 
+            }
+            
+            QMessageBox QLabel#qt_msgbox_label { 
+                color: #ffffff; font-size: 18px; font-weight: 700; 
+            }
+            
+            QMessageBox QLabel#qt_msgbox_informativelabel { 
+                background: #10131a; border: 1px solid #343c4c; border-radius: 10px; padding: 14px; color: #ffffff; font-size: 16px; font-weight: 600; 
+            }
+            
+            QPushButton {
+                background: #315fc4; border: none; border-radius: 9px; padding: 10px 24px; color: #ffffff; font-weight: 700; min-width: 90px;
+            } 
+            
+            QPushButton:hover { 
+                background: #3b6bd8; 
+            }
+            
+            QPushButton:pressed {
+            background: #294fa5; 
+            } """)
+
+        dialog.exec()
 
     # --------------------------------------------------------
     # FINISHED
@@ -1976,6 +2031,44 @@ class MainWindow(QMainWindow):
 
                 event.ignore()
                 return
+        answer.setStyleSheet(
+            """ 
+            QMessageBox { 
+                background: #171a22; color: #ffffff; min-width: 480px; 
+            }
+
+            QMessageBox QLabel { 
+                color: #ffffff; font-size: 14px; 
+            }
+
+            QMessageBox QLabel#qt_msgbox_label { 
+                color: #ffffff; font-size: 18px; font-weight: 700; 
+            }
+
+            QMessageBox QLabel#qt_msgbox_informativelabel { 
+                background: #10131a; border: 1px solid #343c4c; border-radius: 10px; padding: 14px; color: #ffffff; font-size: 16px; font-weight: 600; 
+            }
+
+            QPushButton {
+                background: #315fc4; border: none; border-radius: 9px; padding: 10px 24px; color: #ffffff; font-weight: 700; min-width: 90px;
+            } 
+
+            QPushButton:hover { 
+                background: #3b6bd8; 
+            }
+
+            QPushButton:pressed {
+                background: #294fa5; 
+            } 
+            
+            QMessageBox {
+                background: #171a22;
+            }
+
+            QMessageBox QLabel {
+                color: #ffffff;
+                background: transparent;
+            } """)
 
         event.accept()
 
