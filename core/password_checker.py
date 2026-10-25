@@ -91,7 +91,7 @@ class PasswordChecker(QThread):
             return process.returncode == 0, True
 
         except Exception as e:
-            self.log(f"UnRAR ошибка: {e}")
+            self.log(f"UnRAR error: {e}")
             return False, True
 
     def rarfile_quick_test(self, password):
@@ -101,19 +101,19 @@ class PasswordChecker(QThread):
                 infos = archive.infolist()
 
                 if not infos:
-                    return False, False, "RAR не вернул список файлов"
+                    return False, False, "RAR returned no file list"
 
                 files = [info for info in infos if not info.isdir()]
 
                 if not files:
-                    return False, False, "В архиве нет файлов"
+                    return False, False, "The archive contains no files"
 
                 files.sort(
                     key=lambda info: getattr(info, "file_size", 0) or 0
                 )
 
                 test_info = files[0]
-                self.log(f"Тест: {test_info.filename}")
+                self.log(f"Testing: {test_info.filename}")
 
                 with archive.open(test_info) as file:
                     file.read(4096)
@@ -121,13 +121,13 @@ class PasswordChecker(QThread):
             return True, True, ""
 
         except rarfile.BadRarFile:
-            return False, False, "Повреждённый или неподдерживаемый RAR"
+            return False, False, "Corrupted or unsupported RAR archive"
         except rarfile.PasswordRequired:
-            return False, False, "Требуется пароль"
+            return False, False, "Password required"
         except rarfile.RarWrongPassword:
-            return False, False, "Неверный пароль"
+            return False, False, "Incorrect password"
         except rarfile.NoCrypto:
-            return False, False, "Криптография RAR не поддерживается"
+            return False, False, "RAR encryption is not supported"
         except Exception as e:
             return False, False, str(e)
 
@@ -139,14 +139,14 @@ class PasswordChecker(QThread):
                 files = [info for info in infos if not info.isdir()]
 
                 if not files:
-                    return False, "В архиве нет файлов"
+                    return False, "The archive contains no files"
 
                 for index, info in enumerate(files, start=1):
                     if self.stop_requested:
                         return False, "STOP"
 
                     self.log(
-                        f"Проверка {index}/{len(files)}: {info.filename}"
+                        f"Checking {index}/{len(files)}: {info.filename}"
                     )
 
                     with archive.open(info) as file:
@@ -165,13 +165,13 @@ class PasswordChecker(QThread):
             return True, ""
 
         except rarfile.RarWrongPassword:
-            return False, "Неверный пароль"
+            return False, "Incorrect password"
         except rarfile.PasswordRequired:
-            return False, "Требуется пароль"
+            return False, "Password required"
         except rarfile.BadRarFile:
-            return False, "Повреждённый RAR"
+            return False, "Corrupted RAR archive"
         except rarfile.NoCrypto:
-            return False, "Криптография не поддерживается"
+            return False, "Encryption is not supported"
         except Exception as e:
             return False, str(e)
 
@@ -215,19 +215,19 @@ class PasswordChecker(QThread):
             unrar = Path(self.unrar_path)
 
             if not archive.is_file():
-                self.error_signal.emit("RAR архив не найден.")
+                self.error_signal.emit("RAR archive not found.")
                 return
 
             if archive.stat().st_size == 0:
-                self.error_signal.emit("RAR архив пуст.")
+                self.error_signal.emit("RAR archive is empty.")
                 return
 
             if not wordlist.is_file():
-                self.error_signal.emit("Wordlist не найден.")
+                self.error_signal.emit("Wordlist not found.")
                 return
 
             if not unrar.is_file():
-                self.error_signal.emit("UnRAR.exe не найден.")
+                self.error_signal.emit("UnRAR.exe not found.")
                 return
 
             rarfile.UNRAR_TOOL = str(unrar)
@@ -236,15 +236,15 @@ class PasswordChecker(QThread):
                 with rarfile.RarFile(str(archive)) as rar:
                     if not rar.needs_password():
                         self.error_signal.emit(
-                            "RAR архив не защищён паролем."
+                            "The RAR archive is not password-protected."
                         )
                         return
 
-                self.log("✓ Архив защищён паролем.")
+                self.log("✓ Archive is password-protected.")
 
             except Exception as e:
                 self.error_signal.emit(
-                    f"Не удалось определить защиту архива: {e}"
+                    f"Could not determine archive protection: {e}"
                 )
                 return
 
@@ -267,23 +267,23 @@ class PasswordChecker(QThread):
                 )
 
                 if result.returncode == 0:
-                    self.log("✓ Архив успешно распознан.")
+                    self.log("✓ Archive recognized successfully.")
                 else:
                     self.log(
-                        "Предупреждение: UnRAR вернул код "
+                        "Warning: UnRAR returned exit code "
                         f"{result.returncode}."
                     )
 
             except subprocess.TimeoutExpired:
-                self.log("Предупреждение: проверка UnRAR заняла слишком много времени.")
+                self.log("Warning: UnRAR verification took too long.")
 
             total = self.count_wordlist()
 
             if total == 0:
-                self.error_signal.emit("Wordlist пуст.")
+                self.error_signal.emit("Wordlist is empty.")
                 return
 
-            self.log(f"Wordlist: {total:,} строк")
+            self.log(f"Wordlist: {total:,} lines")
 
             seen = set()
 
@@ -291,12 +291,12 @@ class PasswordChecker(QThread):
                 for raw_line in file:
                     if not self.wait_if_paused():
                         self.finished_signal.emit(
-                            "Проверка остановлена."
+                            "Recovery stopped."
                         )
                         return
 
                     if self.stop_requested:
-                        self.finished_signal.emit("Проверка остановлена.")
+                        self.finished_signal.emit("Recovery stopped.")
                         return
 
                     password = self.decode_password(raw_line)
@@ -317,9 +317,9 @@ class PasswordChecker(QThread):
 
                     self.progress_signal.emit(min(100, progress))
                     self.stats_signal.emit(
-                        f"{self.tested:,} проверено  •  "
-                        f"{self.skipped:,} пропущено  •  "
-                        f"{total:,} строк"
+                        f"{self.tested:,} checked  •  "
+                        f"{self.skipped:,} skipped  •  "
+                        f"{total:,} lines"
                     )
 
                     if self.verification_mode == "quick":
@@ -327,7 +327,7 @@ class PasswordChecker(QThread):
 
                         if ok:
                             self.found_signal.emit(password)
-                            self.finished_signal.emit("Пароль найден.")
+                            self.finished_signal.emit("Password found.")
                             return
 
                         if not usable:
@@ -337,7 +337,7 @@ class PasswordChecker(QThread):
 
                             if unrar_ok:
                                 self.found_signal.emit(password)
-                                self.finished_signal.emit("Пароль найден.")
+                                self.finished_signal.emit("Password found.")
                                 return
 
                     else:
@@ -345,15 +345,15 @@ class PasswordChecker(QThread):
 
                         if ok:
                             self.found_signal.emit(password)
-                            self.finished_signal.emit("Пароль найден.")
+                            self.finished_signal.emit("Password found.")
                             return
 
                         if error == "STOP":
-                            self.finished_signal.emit("Проверка остановлена.")
+                            self.finished_signal.emit("Recovery stopped.")
                             return
 
             self.progress_signal.emit(100)
-            self.finished_signal.emit("Пароль в wordlist не найден.")
+            self.finished_signal.emit("Password not found in the wordlist.")
 
         except Exception as e:
             self.error_signal.emit(f"{type(e).__name__}: {e}")

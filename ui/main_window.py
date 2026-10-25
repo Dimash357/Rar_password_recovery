@@ -21,6 +21,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -68,7 +69,7 @@ class MainWindow(QMainWindow):
         title = QLabel("RAR Password Recovery")
         title.setObjectName("title")
 
-        subtitle = QLabel("Проверка паролей по словарю")
+        subtitle = QLabel("Wordlist-Based Password Recovery")
         subtitle.setObjectName("subtitle")
 
         title_box.addWidget(title)
@@ -98,7 +99,7 @@ class MainWindow(QMainWindow):
             12
         )
 
-        card_title = QLabel("Файлы")
+        card_title = QLabel("Files")
         card_title.setObjectName("cardTitle")
 
         file_layout.addWidget(card_title)
@@ -106,8 +107,8 @@ class MainWindow(QMainWindow):
         self.archive_edit = (
             self.create_file_row(
                 file_layout,
-                "Архив",
-                "Выберите RAR архив...",
+                "Archive",
+                "Select a RAR archive...",
                 self.select_archive,
             )
         )
@@ -116,7 +117,7 @@ class MainWindow(QMainWindow):
             self.create_file_row(
                 file_layout,
                 "Wordlist",
-                "Выберите файл со списком паролей...",
+                "Select a password wordlist...",
                 self.select_wordlist,
             )
         )
@@ -125,7 +126,7 @@ class MainWindow(QMainWindow):
             self.create_file_row(
                 file_layout,
                 "UnRAR",
-                "Путь к UnRAR.exe...",
+                "Path to UnRAR.exe...",
                 self.select_unrar,
             )
         )
@@ -150,18 +151,18 @@ class MainWindow(QMainWindow):
         # Verification
         verification_box = QVBoxLayout()
 
-        verification_label = QLabel("Режим проверки")
+        verification_label = QLabel("Verification Mode")
         verification_label.setObjectName("fieldLabel")
 
         self.verification_combo = (QComboBox())
 
         self.verification_combo.addItem(
-            "Быстрая проверка",
+            "Quick Verification",
             "quick",
         )
 
         self.verification_combo.addItem(
-            "Полная проверка",
+            "Full Verification",
             "full",
         )
 
@@ -171,10 +172,10 @@ class MainWindow(QMainWindow):
         # Duplicate
         duplicate_box = QVBoxLayout()
 
-        duplicate_label = QLabel("Опции")
+        duplicate_label = QLabel("Options")
         duplicate_label.setObjectName("fieldLabel")
 
-        self.duplicate_button = (QPushButton("●  Пропускать дубликаты"))
+        self.duplicate_button = (QPushButton("●  Skip Duplicates"))
         self.duplicate_button.setCheckable(True)
         self.duplicate_button.setChecked(True)
         self.duplicate_button.clicked.connect(self.toggle_duplicates)
@@ -208,7 +209,7 @@ class MainWindow(QMainWindow):
 
         self.status_dot = QLabel("●")
         self.status_dot.setObjectName("statusDot")
-        self.status_label = QLabel("Готов к проверке")
+        self.status_label = QLabel("Ready to Start")
         self.status_label.setObjectName("statusLabel")
 
         status_header.addWidget(self.status_dot)
@@ -229,9 +230,9 @@ class MainWindow(QMainWindow):
         status_layout.addWidget(self.progress)
 
         self.stats_label = QLabel(
-            "0 проверено  •  "
-            "0 пропущено  •  "
-            "0 строк"
+            "0 checked  •  "
+            "0 skipped  •  "
+            "0 lines"
         )
 
         self.stats_label.setObjectName("stats")
@@ -246,15 +247,15 @@ class MainWindow(QMainWindow):
 
         buttons = QHBoxLayout()
 
-        self.start_button = QPushButton("▶   Начать проверку")
+        self.start_button = QPushButton("▶   Start Recovery")
         self.start_button.setObjectName("startButton")
 
-        self.pause_button = QPushButton("⏸  Пауза")
+        self.pause_button = QPushButton("⏸  Pause")
         self.pause_button.setObjectName("pauseButton")
         self.pause_button.setEnabled(False)
         self.pause_button.clicked.connect(self.toggle_pause)
 
-        self.stop_button = QPushButton("■   Остановить")
+        self.stop_button = QPushButton("■   Stop")
         self.stop_button.setObjectName("stopButton")
         self.stop_button.setEnabled(False)
 
@@ -273,7 +274,7 @@ class MainWindow(QMainWindow):
 
         log_title = QHBoxLayout()
 
-        log_label = QLabel("Журнал")
+        log_label = QLabel("Log")
         log_label.setObjectName("cardTitle")
 
         log_title.addWidget(log_label)
@@ -320,7 +321,7 @@ class MainWindow(QMainWindow):
         edit.setMinimumWidth(420)
         edit.setToolTip("")
 
-        button = QPushButton("Обзор")
+        button = QPushButton("Browse")
         button.setMinimumWidth(90)
         button.setMaximumWidth(110)
         button.clicked.connect(callback)
@@ -360,11 +361,11 @@ class MainWindow(QMainWindow):
             if unrar:
                 self.unrar_edit.setText(str(unrar))
 
-            self.write_log(f"✓ UnRAR найден: {path}")
+            self.write_log(f"✓ UnRAR found: {path}")
 
         else:
 
-            self.write_log("⚠ UnRAR.exe не найден автоматически.")
+            self.write_log("⚠ UnRAR.exe was not found automatically.")
 
     # --------------------------------------------------------
     # SELECT ARCHIVE
@@ -373,10 +374,10 @@ class MainWindow(QMainWindow):
     def select_archive(self):
         path, _ = QFileDialog.getOpenFileName(
             self,
-            "Выберите RAR архив",
+            "Select a RAR archive",
             "",
-            "RAR архивы (*.rar *.part*.rar *.r00 *.r01);;"
-            "Все файлы (*)",
+            "RAR Archives (*.rar *.part*.rar *.r00 *.r01);;"
+            "All Files (*)",
         )
 
         if path:
@@ -389,10 +390,10 @@ class MainWindow(QMainWindow):
     def select_wordlist(self):
         path, _ = QFileDialog.getOpenFileName(
             self,
-            "Выберите wordlist",
+            "Select a wordlist",
             "",
             "Wordlist (*.txt *.lst *.dic);;"
-            "Все файлы (*)",
+            "All Files (*)",
         )
 
         if path:
@@ -405,9 +406,9 @@ class MainWindow(QMainWindow):
     def select_unrar(self):
         path, _ = QFileDialog.getOpenFileName(
             self,
-            "Выберите UnRAR.exe",
+            "Select UnRAR.exe",
             "",
-            "UnRAR.exe (UnRAR.exe);;Все файлы (*)",
+            "UnRAR.exe (UnRAR.exe);;All Files (*)",
         )
 
         if path:
@@ -419,10 +420,10 @@ class MainWindow(QMainWindow):
 
     def toggle_duplicates(self):
         if self.duplicate_button.isChecked():
-            self.duplicate_button.setText("●  Пропускать дубликаты")
+            self.duplicate_button.setText("●  Skip Duplicates")
 
         else:
-            self.duplicate_button.setText("○  Не пропускать дубликаты")
+            self.duplicate_button.setText("○  Do Not Skip Duplicates")
 
     # --------------------------------------------------------
     # LOG
@@ -448,8 +449,8 @@ class MainWindow(QMainWindow):
         if not archive:
             QMessageBox.warning(
                 self,
-                "Не выбран архив",
-                "Выберите RAR архив.",
+                "No Archive Selected",
+                "Please select a RAR archive.",
             )
 
             return
@@ -457,8 +458,8 @@ class MainWindow(QMainWindow):
         if not Path(archive).is_file():
             QMessageBox.warning(
                 self,
-                "Ошибка",
-                "Указанный архив не существует.",
+                "Error",
+                "The specified archive does not exist.",
             )
 
             return
@@ -466,8 +467,8 @@ class MainWindow(QMainWindow):
         if not wordlist:
             QMessageBox.warning(
                 self,
-                "Не выбран wordlist",
-                "Выберите файл со списком паролей.",
+                "No Wordlist Selected",
+                "Please select a password wordlist.",
             )
 
             return
@@ -475,8 +476,8 @@ class MainWindow(QMainWindow):
         if not Path(wordlist).is_file():
             QMessageBox.warning(
                 self,
-                "Ошибка",
-                "Wordlist не существует.",
+                "Error",
+                "The wordlist does not exist.",
             )
 
             return
@@ -485,7 +486,7 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(
                 self,
                 "UnRAR",
-                "Не найден UnRAR.exe.",
+                "UnRAR.exe was not found.",
             )
 
             return
@@ -494,7 +495,7 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(
                 self,
                 "UnRAR",
-                "Указанный UnRAR.exe не существует.",
+                "The specified UnRAR.exe does not exist.",
             )
 
             return
@@ -505,17 +506,17 @@ class MainWindow(QMainWindow):
 
         self.progress.setValue(0)
         self.percent_label.setText("0%")
-        self.status_label.setText("Подготовка...")
+        self.status_label.setText("Preparing...")
 
         self.stats_label.setText(
-            "0 проверено  •  "
-            "0 пропущено  •  "
-            "подготовка"
+            "0 checked  •  "
+            "0 skipped  •  "
+            "preparing"
         )
 
         self.write_log("")
         self.write_log("════════════════════════════════════")
-        self.write_log("  Запуск RAR Password Recovery 2.2")
+        self.write_log("  Starting RAR Password Recovery 2.2")
         self.write_log("════════════════════════════════════")
 
         mode = (self.verification_combo.currentData())
@@ -551,7 +552,7 @@ class MainWindow(QMainWindow):
 
         if value > 0:
             self.status_label.setText(
-                "Идёт проверка..."
+                "Recovery in progress..."
             )
 
     # --------------------------------------------------------
@@ -564,15 +565,15 @@ class MainWindow(QMainWindow):
 
         if self.pause_button.text().startswith("⏸"):
             self.checker.pause()
-            self.pause_button.setText("▶  Продолжить")
-            self.status_label.setText("Проверка приостановлена")
-            self.write_log("⏸ Проверка приостановлена.")
+            self.pause_button.setText("▶  Resume")
+            self.status_label.setText("Recovery paused")
+            self.write_log("⏸ Recovery paused.")
 
         else:
             self.checker.resume()
-            self.pause_button.setText("⏸  Пауза")
-            self.status_label.setText("Возобновление проверки...")
-            self.write_log("▶ Проверка возобновлена.")
+            self.pause_button.setText("⏸  Pause")
+            self.status_label.setText("Resuming recovery...")
+            self.write_log("▶ Recovery resumed.")
 
     # --------------------------------------------------------
     # STOP
@@ -580,8 +581,8 @@ class MainWindow(QMainWindow):
 
     def stop_check(self):
         if self.checker and self.checker.isRunning():
-            self.status_label.setText("Остановка...")
-            self.write_log("⚠ Запрошена остановка.")
+            self.status_label.setText("Stopping...")
+            self.write_log("⚠ Stop requested.")
             self.stop_button.setEnabled(False)
             self.checker.stop()
 
@@ -590,18 +591,18 @@ class MainWindow(QMainWindow):
     # --------------------------------------------------------
 
     def password_found(self, password):
-        self.status_label.setText("Пароль найден!")
+        self.status_label.setText("Password Found!")
         self.status_dot.setText("●")
         self.write_log("")
         self.write_log("════════════════════════════════════")
-        self.write_log("  ✓ ПАРОЛЬ НАЙДЕН")
-        self.write_log(f"  Пароль: {password}")
+        self.write_log("  ✓ PASSWORD FOUND")
+        self.write_log(f"  Password: {password}")
         self.write_log("════════════════════════════════════")
 
         dialog = QMessageBox(self)
-        dialog.setWindowTitle("Пароль найден")
-        dialog.setText("Пароль успешно найден!")
-        dialog.setInformativeText(f"\nПароль:\n{password}")
+        dialog.setWindowTitle("Password Found")
+        dialog.setText("Password recovered successfully!")
+        dialog.setInformativeText(f"\nPassword:\n{password}")
         dialog.setIcon(QMessageBox.Icon.Information)
         dialog.setStandardButtons(QMessageBox.StandardButton.Ok)
         dialog.setStyleSheet(
@@ -643,27 +644,27 @@ class MainWindow(QMainWindow):
     def check_finished(self, message):
         self.write_log(f"→ {message}")
 
-        if "найден" in message.lower():
-            self.status_label.setText("Готово — пароль найден")
+        if "found" in message.lower() or "найден" in message.lower():
+            self.status_label.setText("Done — password found")
 
-        elif "останов" in message.lower():
-            self.status_label.setText("Проверка остановлена")
+        elif "stopped" in message.lower() or "останов" in message.lower():
+            self.status_label.setText("Recovery stopped")
 
         else:
-            self.status_label.setText("Проверка завершена")
+            self.status_label.setText("Recovery completed")
 
     # --------------------------------------------------------
     # ERROR
     # --------------------------------------------------------
 
     def check_error(self, message):
-        self.status_label.setText("Ошибка")
+        self.status_label.setText("Error")
 
-        self.write_log(f"✕ Ошибка: {message}")
+        self.write_log(f"✕ Error: {message}")
 
         QMessageBox.critical(
             self,
-            "Ошибка",
+            "Error",
             message,
         )
 
@@ -674,7 +675,7 @@ class MainWindow(QMainWindow):
     def worker_finished(self):
         self.set_running_ui(False)
 
-        self.write_log("Поток проверки завершён.")
+        self.write_log("Recovery thread finished.")
 
         if self.checker:
             self.checker.deleteLater()
@@ -696,7 +697,7 @@ class MainWindow(QMainWindow):
         self.pause_button.setEnabled(running)
 
         if not running:
-            self.pause_button.setText("⏸  Пауза")
+            self.pause_button.setText("⏸  Pause")
 
     # --------------------------------------------------------
     # CLOSE
@@ -706,10 +707,10 @@ class MainWindow(QMainWindow):
         if self.checker and self.checker.isRunning():
             answer = QMessageBox.question(
                 self,
-                "Проверка выполняется",
+                "Recovery in Progress",
                 (
-                    "Проверка паролей ещё выполняется.\n\n"
-                    "Остановить её и закрыть программу?"
+                    "Password recovery is still running.\n\n"
+                    "Stop it and close the application?"
                 ),
                 QMessageBox.StandardButton.Yes
                 | QMessageBox.StandardButton.No,
@@ -725,10 +726,10 @@ class MainWindow(QMainWindow):
             if not self.checker.wait(5000):
                 QMessageBox.warning(
                     self,
-                    "Остановка",
+                    "Stopping",
                     (
-                        "Проверка ещё не завершилась.\n\n"
-                        "Закрытие отменено."
+                        "Recovery has not finished yet.\n\n"
+                        "Closing cancelled."
                     ),
                 )
 
