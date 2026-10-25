@@ -1,5 +1,9 @@
 # 🔐 RAR Password Recovery
 
+[![Tests](https://github.com/Dimash357/Rar_password_recovery/actions/workflows/tests.yml/badge.svg)](https://github.com/Dimash357/Rar_password_recovery/actions/workflows/tests.yml)
+
+
+
 <p align="center">
   <strong>A lightweight Python tool for recovering passwords from password-protected RAR archives using a wordlist.</strong>
 </p>
