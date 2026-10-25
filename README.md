@@ -177,11 +177,11 @@ The project separates the core password-checking logic, archive utility detectio
 - [x] Wordlist-based password recovery
 - [x] Real-time progress and logging
 - [x] Pause, resume, and stop controls
+- [x] Packaged Windows executable
+- [x] Improved error handling and automated tests
 - [ ] Recovery speed and elapsed-time statistics
 - [ ] Estimated time remaining
 - [ ] Save and export recovery results
-- [ ] Improved error handling and automated tests
-- [ ] Packaged Windows executable
 - [ ] Additional recovery configuration options
 
 ## 🤝 Contributing
