@@ -69,11 +69,3 @@ quarantine/
 
 .vscode/
 .idea/
-
-# Screenshots
-
-screenshots/
-*.png
-*.jpg
-*.jpeg
-*.webp
