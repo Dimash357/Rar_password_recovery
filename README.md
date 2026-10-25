@@ -134,7 +134,7 @@ The quality of the wordlist significantly affects the chances of recovering a pa
 ## 📁 Project Structure
 
 ```text
-rar-password-recovery/
+Rar_password_recovery/
 ├── core/
 │   ├── __init__.py
 │   ├── password_checker.py
