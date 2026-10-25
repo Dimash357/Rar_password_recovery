@@ -45,6 +45,22 @@ Instead of working entirely in the terminal, users can select an archive, load a
 - 📦 **Modular architecture** — separate application logic from the user interface.
 - 🪶 **Lightweight** — built with Python and a small set of dependencies.
 
+## 📥 Download
+
+You can download the latest Windows version of **RARVault** from the [Releases](https://github.com/Dimash357/Rar_password_recovery/releases) page.
+
+### Windows
+
+1. Open the [latest release](https://github.com/Dimash357/Rar_password_recovery/releases/latest).
+2. Download `RARVault.exe` from the **Assets** section.
+3. Run the downloaded executable.
+
+**Note:** Windows may display a security warning because the application is not digitally signed. Only run software you trust.
+
+### Run from source
+
+If you prefer to run the application from source, see the installation instructions below.
+
 ## 🖼️ Screenshots
 
 <!-- Replace this placeholder with a screenshot of the application. -->
