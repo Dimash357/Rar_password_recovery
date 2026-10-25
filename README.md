@@ -69,8 +69,8 @@ Instead of working entirely in the terminal, users can select an archive, load a
 ### 1. Clone the repository
 
 ```bash
-git clone https://github.com/Dimash357/rar-password-recovery.git
-cd rar-password-recovery
+git clone https://github.com/Dimash357/Rar_password_recovery.git
+cd Rar_password_recovery
 ```
 
 ### 2. Create a virtual environment
