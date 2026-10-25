@@ -35,12 +35,6 @@ htmlcov/
 .env.*
 !.env.example
 
-# Application logs and local data
-
-*.log
-.sentinelscan_history.json
-sentinelscan_history.json
-
 # OS files
 
 .DS_Store
@@ -64,8 +58,3 @@ quarantine/
 
 *.exe
 *.msi
-
-# Local development files
-
-.vscode/
-.idea/
